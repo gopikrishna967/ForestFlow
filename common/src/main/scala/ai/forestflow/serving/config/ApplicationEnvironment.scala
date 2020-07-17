@@ -50,11 +50,4 @@ object ApplicationEnvironment extends StrictLogging {
   }
   lazy val HTTP_PORT = config.getInt("application.http-port")
   lazy val HTTP_BIND_ADDRESS = Try(config.getString("http-bind-address")).getOrElse("0.0.0.0")
-  lazy val S3_DOWNLOAD_TIMEOUT_SECS = {
-    val duration = config.getDuration("application.s3-download-timeout", TimeUnit.SECONDS)
-    require(duration > 1, "http-command-timeout cannot be less than 1 second")
-    duration
-  }
-  lazy val S3_ACCESS_KEY_APPENDER = config.getString("application.s3-access-key-appender")
-  lazy val S3_SECRET_ACCESS_KEY_APPENDER = config.getString("application.s3-secret-access-key-appender")
 }

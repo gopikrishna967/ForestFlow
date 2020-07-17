@@ -17,17 +17,16 @@ import java.net.URI
 import java.nio.file.Paths
 
 import ai.forestflow.domain.{Contract, FQRV}
-import ai.forestflow.serving.config.ApplicationEnvironment.{S3_ACCESS_KEY_APPENDER, S3_DOWNLOAD_TIMEOUT_SECS, S3_SECRET_ACCESS_KEY_APPENDER}
+import ai.forestflow.serving.config.S3Configs._
 import akka.NotUsed
 import akka.actor.ActorSystem
-import akka.stream.alpakka.s3.{ObjectMetadata, S3Attributes, S3Ext, scaladsl}
+import akka.stream.alpakka.s3.{ApiVersion, ObjectMetadata, S3Attributes, S3Settings, scaladsl}
 import akka.stream.scaladsl.{FileIO, Source}
 import akka.stream.{ActorMaterializer, IOResult}
 import akka.util.{ByteString, Timeout}
 import com.typesafe.scalalogging.StrictLogging
 import org.apache.commons.io.FileUtils
 import org.eclipse.jgit.api.CloneCommand
-import org.eclipse.jgit.storage.file.FileRepositoryBuilder
 import org.eclipse.jgit.transport.{CredentialItem, CredentialsProvider, URIish}
 import software.amazon.awssdk.auth.credentials.{AwsBasicCredentials, AwsCredentials, StaticCredentialsProvider}
 import software.amazon.awssdk.regions.Region
@@ -36,7 +35,7 @@ import software.amazon.awssdk.regions.providers.AwsRegionProvider
 import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.language.implicitConversions
-import scala.util.{Failure, Success}
+import scala.util.{Failure, Success, Try}
 
 /**
   * The different protocols we can understand and support
@@ -126,18 +125,34 @@ object SourceStorageProtocols extends StrictLogging {
       require(remotePath != null && !remotePath.isEmpty, "path field in the serve request cannot be null or empty" )
       require(artifactName != null && !artifactName.isEmpty, "artifact name which serves as the s3 bucket name cannot be null or empty" )
 
+      implicit val s3DownloadTimeout: Timeout = Timeout(S3_DOWNLOAD_TIMEOUT_SECS seconds)
+
+
       def getAndSetS3Credentials(uri : URI) : AwsCredentials = {
+
         //the root key is per bucket per bucket-key
         //the format for the rootKey needs to be strictly followed - refer to the docs for more information
-        val credentialsRootKey = uri.getAuthority + uri.getPath + "/" + artifactName
-        val accessKeyId = System.getenv(s"$credentialsRootKey$S3_ACCESS_KEY_APPENDER")
-        val secretAccessKey = System.getenv(s"$credentialsRootKey$S3_SECRET_ACCESS_KEY_APPENDER")
+        val credentialsRootKey = s"${uri.getAuthority}${uri.getPath}_$artifactName"
+          .replaceAll("""[^A-Za-z0-9]""", "_")
+          .replaceAll("""_+""","_")
+
+        val accessKeyId = Try(s3Configs.getString(s"$credentialsRootKey.$S3_ACCESS_KEY_ID_POSTFIX")) match {
+          case Success(value) => value
+          case _              => System.getenv(s"${credentialsRootKey}_$S3_ACCESS_KEY_ID_POSTFIX")
+        }
+
+        val secretAccessKey = Try(s3Configs.getString(s"$credentialsRootKey.$S3_SECRET_ACCESS_KEY_POSTFIX")) match {
+          case Success(value) => value
+          case _              => System.getenv(s"${credentialsRootKey}_$S3_SECRET_ACCESS_KEY_POSTFIX")
+        }
+
         require(accessKeyId != null && !accessKeyId.isEmpty, "S3 storage's 'Access Key' cannot be null or empty. Refer to the docs on how to pass this information" )
         require(secretAccessKey != null && !secretAccessKey.isEmpty, "S3 storage's 'Access Key Secret' cannot be null or empty. Refer to the docs on how to pass this information" )
+
         AwsBasicCredentials.create(accessKeyId,secretAccessKey)
       }
 
-      implicit val s3DownloadTimeout: Timeout = Timeout(S3_DOWNLOAD_TIMEOUT_SECS seconds)
+
 
       val remotePathRegex = """(s3:(?>:http(?>s)?:)?//.*)\s+bucket=([a-z0-9.-]+)\s*(?:region=(.*))?""".r
 
@@ -156,9 +171,11 @@ object SourceStorageProtocols extends StrictLogging {
       val localFilePath = Paths.get(localDirectory.getAbsolutePath, artifactName)
 
       val s3StaticCredentials = getAndSetS3Credentials(uri)
-      val s3Settings = S3Ext(system).settings
-        .withEndpointUrl(uri.getScheme + "://" + uri.getAuthority)
-        .withPathStyleAccess(isBucketAccessPathStyle)
+
+      val s3SettingsOverride = S3Settings(s3Configs)
+        .withEndpointUrl(s"${uri.getScheme}://${uri.getAuthority}")
+        //.withPathStyleAccess(isBucketAccessPathStyle)
+        .withListBucketApiVersion(ApiVersion.ListBucketVersion1)
         .withCredentialsProvider(StaticCredentialsProvider.create(s3StaticCredentials))
         .withS3RegionProvider(new AwsRegionProvider {
           override def getRegion: Region = Region.of(regionOption.getOrElse("none"))
@@ -166,7 +183,7 @@ object SourceStorageProtocols extends StrictLogging {
 
       val s3File: Source[Option[(Source[ByteString, NotUsed], ObjectMetadata)], NotUsed] = scaladsl.S3
         .download(bucket, artifactName)
-        .withAttributes(S3Attributes.settings(s3Settings))
+        .withAttributes(S3Attributes.settings(s3SettingsOverride))
 
       //an unsuccessful download operation like bucket and/or object not found would lead to removal of the file from the given local directory
       val result: Future[IOResult] = s3File
