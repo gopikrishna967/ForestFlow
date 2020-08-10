@@ -226,109 +226,16 @@ In ForestFlow this is referred to as the [BasicServeRequest](https://github.com/
      }
      ``` 
  
-   - <a name="serve-request-path">**path**</a>: Where is the model artifact stored (excluding the model file name). ForestFlow must be able to access this file path.
-     Example:
-     Local filesystem: file:///my-models/DreamWorks/schedule/0
-     Git: git@github.com:<USER or Org>/<project>.git#v<Numeric Contract Number>.<Release Version>
+   - <a name="serve-request-path">**path**</a>: Where the model artifact is stored (excluding the model file name). ForestFlow must be able to access this file path.
+   
+     Examples:
+     - Local filesystem: `file:///my-models/DreamWorks/schedule/0`
+     - Git: `git@github.com:<USER or Org>/<project>.git#v<Numeric Contract Number>.<Release Version>`
      
      ForestFlow currently supports the following [StorageProtocols](https://github.com/ForestFlow/ForestFlow/tree/master/core/src/main/scala/com/dreamworks/forestflow/utils/SourceStorageProtocols.scala):
-      - local file system
-      - git (with support for Git LFS)
-      - S3 
-      
-      To use s3 as a storage backend, there are two requirements that the integration should satisfy:
-       - s3 protocol:
-          The s3 protocol requires that you specify the s3 endpoint, bucket name and optionally region in the format described below:
-              
-                S3_endpoint<:port> bucket=<s3-bucket-name> [region=<s3-region-name>]
-              
-          a) The endpoint is an url that specifies the location of an Amazon S3 bucket (or any Amazon s3 compatible service). This url is mandatory information that should be solely 
-             sufficient to access the specified s3 bucket, as no url inference is done internally based on the specified bucket and region parameter values. The style of the URL followed 
-             to access the bucket can be both path style or virtual hosted style. Additionally, if the scheme of endpoint URL is not s3://, the s3 url needs to start with a "s3::" prefix. 
-             For instance, when the scheme is either http or http(s). A prefix is not needed otherwise.
-             
-           Examples : 
-               
-                  1) for s3 url: https://s3-us-west-1.amazonaws.com:8082 and bucket: test1
-                  the S3_endpoint parameter value is: s3::https://s3-us-west-2.amazonaws.com:8082/test1
-                  
-                  2) for s3 url: s3://s3-us-west-2.amazonaws.com and bucket : test2
-                  the S3_endpoint parameter value is: s3://s3-us-west-2.amazonaws.com/test2
-                  
-                  3) for s3 url: http://test3.s3-us-west-1.amazonaws.com and bucket: test3
-                     the S3_endpoint parameter value is: s3::http://test3.s3-us-west-1.amazonaws.com
-               
-           b) The bucket parameter specifies the name of the s3 bucket. 
-               
-           c) The optional region parameter is the s3 region that the s3 bucket resides in, for example: us-west-1. If no region value is specified the s3 region value is set to "none", as there 
-              could be no sensible default for it. 
-               
-            Examples :
-               
-               1) for s3 url: https://s3-us-west-1.amazonaws.com:8082, bucket: test1, region=us-west-1
-                    the s3 protocol is: s3::https://s3-us-west-2.amazonaws.com:8082/test1 bucket=test1 region=us-west-1
-                              
-               2) for s3 url: s3://s3-us-west-2.amazonaws.com and bucket : test2
-                    the s3 protocol is: s3://s3-us-west-2.amazonaws.com/test2 bucket=test2
-                    please note that, in the above example there is no region parameter is specified as it can be optional. 
-                              
-               3) for s3 url: http://test3.s3-us-west-1.amazonaws.com and bucket: test3
-                    the s3 protocol is: s3::http://test3.s3-us-west-1.amazonaws.com bucket=test3 region=us-west-1
-               
-       - credentials:
-          ForestFlow looks for the s3 credentials, i.e., access_key_id and its secret, that are set and made accessible to FF through either a) the typesafe config or environment variables with keys 
-          having the format as described below.
-               
-          The s3 credentials' lookup follows a 3-layered approach with a fallback strategy onto the higher levels, with the 3 layers being
-                        
-                        <s3-url-authority>_<s3-url-bucket>_<s3-bucket-key> (most specific, lowest level), 
-                        <s3-url-authority>_<s3-url-bucket> and 
-                        <s3-url-authority> (least specific, highest level). 
-                        
-          The layered approach is used to represent the idea of credentials inheritance, in that the lesser specific(higher level) credentials are implied to be inherited by all its lower level s3 layers 
-          unless a more specific version is supplied, i.e., to say for instance:
-          if only <s3-url-authority>_<s3-url-bucket> credentials are supplied, then it is inferred that all the keys available under that specific bucket would inherit its bucket credentials. 
-          Similarly, if only <s3-url-authority> credentials are supplied, then it is inferred that all the buckets and keys available under that specific domain would inherit its domain credentials.
-               
-          Environment variables format:
-            
-            The format is a compound structure that should be made up of the following two keys: 
-                  a) the s3 credentials layer level and 
-                  b) optionally, a postfix which in turn is specified through either S3_ACCESS_KEY_ID_POSTFIX_CONFIG or S3_SECRET_ACCESS_KEY_POSTFIX_CONFIG.  
-               
-            For example, below is how the format should look like to represent both the s3 credentials at its most specific level
-                   
-               <s3-url-authority>_<s3-url-port>_<s3-bucket>_<s3-bucket-key>_S3_ACCESS_KEY_ID_POSTFIX_CONFIG
-               <s3-url-authority>_<s3-url-port>_<s3-bucket>_<s3-bucket-key>_S3_SECRET_ACCESS_KEY_POSTFIX_CONFIG
-               
-            In the above format, both the postfixes: S3_ACCESS_KEY_ID_POSTFIX_CONFIG and S3_SECRET_ACCESS_KEY_POSTFIX_CONFIG are optional environment variables, which when set serves as postfix for the 
-            compound key and when not set would default to the values "aws_access_key_id" and "aws_secret_access_key" respectively.The resultant compound key, obtained after combining all the individual fields 
-            (as described below), should have all the special characters replaced with "_".
-                     
-            Examples:
-            
-                  1)  Consider that, we need to provide s3 credentials at the key level, which means no credentials inheritance is inferred in this case
-                                     S3_ACCESS_KEY_ID_POSTFIX_CONFIG and S3_SECRET_ACCESS_KEY_POSTFIX_CONFIG are not set in the environment variables, and,
-                                     has s3-url: https://test1.s3-us-west-1.amazonaws.com:8082, bucket: test1, and bucket-key is model1.zip
-                      Then below is how the s3 credentials should be set in the environment variables:
-                              test1_s3_us_west_1_amazonaws_com_8082_model1_zip_aws_access_key_id=<aws_access_key_id>
-                              test1_s3_us_west_1_amazonaws_com_8082_model1_zip_aws_secret_access_key=<aws_secret_access_key>
-                              
-                  2)  Consider that, we need to provide s3 credentials at the domain level, which means all the subdomains for this domain are inferred to have their credentials inherited 
-                                     S3_ACCESS_KEY_ID_POSTFIX_CONFIG and S3_SECRET_ACCESS_KEY_POSTFIX_CONFIG are not set in the environment variables, and
-                                     has s3-url: https://test2.s3-us-west-1.amazonaws.com:8082, bucket: test2, and bucket-key is model2.zip
-                      Then below is how the s3 credentials should be set in the environment variables:
-                                 s3_us_west_1_amazonaws_com_8082_aws_access_key_id=<aws_access_key_id>
-                                 s3_us_west_1_amazonaws_com_8082_aws_secret_access_key=<aws_secret_access_key>
-                                 
-                  3)  Consider that, S3_ACCESS_KEY_ID_POSTFIX_CONFIG and S3_SECRET_ACCESS_KEY_POSTFIX_CONFIG are not set in the environment variables, and
-                                     has www.example.com as a CNAME for www.example.com.s3.us-east-1.amazonaws.com., bucket: www.example.com, and bucket-key is model3.zip
-                      a) If we need to provide s3 credentials at the bucket level, which means all they keys in this bucket are inferred to have their credentials inherited
-                                  www_example_com_aws_access_key_id=<aws_access_key_id>
-                                  www_example_com_aws_secret_access_key=<aws_secret_access_key>
-                      b) If we need to provide s3 credentials at the key level, which means no credentials inheritance is inferred in this case
-                                  www_example_com_model3_zip_aws_access_key_id=<aws_access_key_id>
-                                  www_example_com_model3_zip_aws_secret_access_key=<aws_secret_access_key>
+      - Local filesystem
+      - Git (with support for Git LFS)
+      - S3 (See below)
       
      ForestFlow is pluggable and there are plans to add support for other protocols
      such as HDFS, HTTP and FTP in the future.
@@ -409,3 +316,101 @@ In ForestFlow this is referred to as the [BasicServeRequest](https://github.com/
           The key extracted here, if any, will be used as the Key in a Kafka `ProducerRecord` 
           
         - keyFeaturesSeparator (optional, defaults to "."): The separator to use if multiple keys are provided and their config values are found. 
+
+#### Using S3 Storage
+To use S3 as a storage backend, there are two requirements that should be satisfied:
+1) **s3 protocol**:
+   The s3 protocol requires that you specify the s3 endpoint, bucket name and optionally region in the format described below:
+  
+    `endpoint<:port> bucket=<s3-bucket-name> [region=<s3-region-name>]`
+  
+   - The `endpoint` is the url that specifies the location of an Amazon S3 bucket (or any Amazon s3 compatible service). This url is mandatory and should be
+ sufficient to access the specified S3 bucket. No url inference is done internally based on the specified bucket and region parameter values. The style of the URL 
+ to access the bucket can be either path style or virtual hosted style. Additionally, if the scheme of endpoint URL is not `s3://`, the S3 url needs to start with a `s3::` prefix 
+ (For instance, when the scheme is either http or https). A prefix is not needed otherwise.
+ 
+     - Examples : 
+   
+       1) For the S3 url: `https://s3-us-west-1.amazonaws.com:8082` and bucket: `test1`
+          the `endpoint` parameter value is: `s3::https://s3-us-west-2.amazonaws.com:8082/test1`
+      
+       2) For the S3 url: `s3://s3-us-west-2.amazonaws.com` and bucket: `test2`
+          the `endpoint` parameter value is: `s3://s3-us-west-2.amazonaws.com/test2`
+      
+       3) For the S3 url: `http://test3.s3-us-west-1.amazonaws.com` and bucket: `test3`
+          the `endpoint` parameter value is: `s3::http://test3.s3-us-west-1.amazonaws.com`
+   
+   - The `bucket` parameter specifies the name of the s3 bucket.
+   
+   - The optional `region` parameter is the S3 region that the S3 bucket resides in, for example: `us-west-1`. If no region value is specified, the s3 region value is set to `none`.
+   
+     - Examples :
+    
+       1) For the S3 url: `https://s3-us-west-1.amazonaws.com:8082`, bucket: `test1`, region: `us-west-1`
+          the `endpoint` parameter value is: `s3::https://s3-us-west-2.amazonaws.com:8082/test1 bucket=test1 region=us-west-1`
+                  
+       2) For the S3 url: `s3://s3-us-west-2.amazonaws.com`, bucket : `test2`
+          the `endpoint` parameter value is: `s3://s3-us-west-2.amazonaws.com/test2 bucket=test2`
+          please note that in this example there is no region parameter specified as it is optional. 
+                  
+       3) For the S3 url: `http://test3.s3-us-west-1.amazonaws.com`, bucket: `test3`, region: `us-west-1`
+          the `endpoint` parameter value is: `s3::http://test3.s3-us-west-1.amazonaws.com bucket=test3 region=us-west-1`
+   
+2) **credentials**:
+   ForestFlow looks for the S3 credentials, i.e. access_key_id and secret, that are made accessible to FF through either the typesafe config or environment variables as described in this section.
+   
+   The s3 credentials' lookup follows a 3-layered approach with a fallback strategy onto the higher levels, with the 3 layers being
+            
+     1) `<s3-url-authority>_<s3-url-bucket>_<s3-bucket-key>` (most specific, lowest level)
+     2) `<s3-url-authority>_<s3-url-bucket>`
+     3) `<s3-url-authority>` (least specific, highest level). 
+            
+   This layered approach is used to represent the idea of credential inheritance, in that the less specific (higher level) credentials are inherited by all matching lower level S3 layers 
+   unless a more specific credential is supplied.
+   
+   For instance, if only `<s3-url-authority>_<s3-url-bucket>` credentials are supplied, then it is inferred that all the keys available under that specific bucket would inherit these credentials. 
+   Similarly, if only `<s3-url-authority>` credentials are supplied, then it is inferred that all the buckets and keys available under that specific domain would inherit these domain credentials.
+   
+   - Environment variable format:
+
+     The format is a compound structure that should be made up of the following two keys:
+     
+      1) the S3 credentials layer level and 
+      2) optionally, a postfix which in turn is specified through either `S3_ACCESS_KEY_ID_POSTFIX_CONFIG` or `S3_SECRET_ACCESS_KEY_POSTFIX_CONFIG`.  
+   
+     For example, below is how the format should look like to represent both the s3 credentials at its most specific level
+       
+      - `<s3-url-authority>_<s3-url-port>_<s3-bucket>_<s3-bucket-key>_S3_ACCESS_KEY_ID_POSTFIX_CONFIG`
+      - `<s3-url-authority>_<s3-url-port>_<s3-bucket>_<s3-bucket-key>_S3_SECRET_ACCESS_KEY_POSTFIX_CONFIG`
+   
+     In the above format, both the postfixes: `S3_ACCESS_KEY_ID_POSTFIX_CONFIG` and `S3_SECRET_ACCESS_KEY_POSTFIX_CONFIG` are optional environment variables which when set serve as postfix for the 
+     compound key, and when not set would default to the values `aws_access_key_id` and `aws_secret_access_key` respectively. The resultant compound key, obtained after combining all the individual fields 
+     (as described below), should have all the special characters replaced with `_`.
+         
+     Examples:
+
+      1)  Consider a case where we need to provide S3 credentials at the key level, this means no credential inheritance is inferred. In this case assume that the
+                         `S3_ACCESS_KEY_ID_POSTFIX_CONFIG` and `S3_SECRET_ACCESS_KEY_POSTFIX_CONFIG` environment variables are not set, the S3
+                         url is `https://test1.s3-us-west-1.amazonaws.com:8082`, the bucket is `test1`, and the bucket-key is `model1.zip`
+                         
+          The credentials should be set in the following environment variables:
+            - `test1_s3_us_west_1_amazonaws_com_8082_model1_zip_aws_access_key_id`: `<aws_access_key_id>`
+            - `test1_s3_us_west_1_amazonaws_com_8082_model1_zip_aws_secret_access_key`: `<aws_secret_access_key>`
+                  
+      2)  Consider a case where we need to provide S3 credentials at the domain level, which means all the subdomains for this domain will have their credentials inherited. 
+                         Assume that the `S3_ACCESS_KEY_ID_POSTFIX_CONFIG` and `S3_SECRET_ACCESS_KEY_POSTFIX_CONFIG` environment variables are not set, the S3
+                         url is `https://test2.s3-us-west-1.amazonaws.com:8082`, the bucket is `test2`, and the bucket-key is `model2.zip`
+          
+          The credentials should be set in the following environment variables:
+             - `s3_us_west_1_amazonaws_com_8082_aws_access_key_id`: `<aws_access_key_id>`
+             - `s3_us_west_1_amazonaws_com_8082_aws_secret_access_key`: `<aws_secret_access_key>`
+                     
+      3)  Consider a case where the `S3_ACCESS_KEY_ID_POSTFIX_CONFIG` and `S3_SECRET_ACCESS_KEY_POSTFIX_CONFIG` environment variables are not set,
+                          `www.example.com` is a CNAME for `www.example.com.s3.us-east-1.amazonaws.com.`, with the bucket `www.example.com`, and bucket-key `model3.zip`
+                          
+          1) If we need to provide S3 credentials at the bucket level, which means all they keys in this bucket are inferred to have their credentials inherited:
+             - `www_example_com_aws_access_key_id`: `<aws_access_key_id>`
+             - `www_example_com_aws_secret_access_key`: `<aws_secret_access_key>`
+          2) If we need to provide S3 credentials at the key level, which means no credential inheritance is inferred:
+             - `www_example_com_model3_zip_aws_access_key_id`: `<aws_access_key_id>`
+             - `www_example_com_model3_zip_aws_secret_access_key` `<aws_secret_access_key>`
